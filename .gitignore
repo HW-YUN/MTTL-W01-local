@@ -1,0 +1,40 @@
+# OS metadata
+.DS_Store
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Certificates / private keys
+*.key
+*.pem
+*.crt
+*.p12
+*.pfx
+certs/
+
+# Runtime / local state
+state/
+devices.json
+smartrelay.toml
+
+# Packet captures / private evidence
+captures/
+evidence/
+*.pcap
+*.pcapng
+
+# Firmware binaries
+*.fwr
+*.bin
+
+# Backups
+backups/
+*.bak
+
+# Excluded PDF / reference material
+pdf/
+
+# Local Claude artefacts
+.claude/

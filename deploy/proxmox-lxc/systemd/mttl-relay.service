@@ -1,0 +1,26 @@
+# MTTL-W01 local relay (smartrelay, DECLOUD mode — no upstream, no cloud egress).
+# Install: /etc/systemd/system/mttl-relay.service  (done by deploy/proxmox-lxc/deploy_to_lxc.sh)
+# NOT enabled by default. Start manually:  systemctl start mttl-relay
+#
+# Needs root: binds :80 / :443 / :18831.
+[Unit]
+Description=MTTL-W01 local relay (decloud)
+After=network-online.target dnsmasq.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/srv/mttl-lab/relay
+ExecStart=/usr/bin/python3 /srv/mttl-lab/relay/relay.py serve --config /srv/mttl-lab/relay/smartrelay.toml
+Restart=on-failure
+RestartSec=3
+# hardening (relay needs raw sockets on privileged ports; keep it modest)
+NoNewPrivileges=true
+ProtectSystem=full
+ReadWritePaths=/srv/mttl-lab/relay/certs /srv/mttl-lab/relay/state
+PrivateTmp=true
+# explicit: this unit must never gain outbound internet by itself.
+# (the device segment's egress is blocked upstream; do not add IPAddressAllow here.)
+
+[Install]
+WantedBy=multi-user.target

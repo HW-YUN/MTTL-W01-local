@@ -1,0 +1,18 @@
+# EXAMPLE dnsmasq redirect for the MTTL-W01 local relay.
+#
+# This is a template. Replace <RELAY_HOST_IP> with the IP of the host running the
+# local relay, then install it as /etc/dnsmasq.d/mttl-relay.conf via:
+#     deploy/proxmox-lxc/dns/apply_dns_redirect.sh
+# and revert it with:
+#     deploy/proxmox-lxc/dns/rollback_dns_redirect.sh
+#
+# Effect: the device's queries for the two cloud hosts resolve to the relay
+# instead of the real LG U+ IPs. Everything else keeps resolving normally via the
+# existing upstream resolver (<UPSTREAM_DNS_IP>).
+#
+# dev.toi.ommeq.com / log.toi.ommeq.com are deliberately NOT redirected here
+# (the device was observed querying mef.onem2m.uplus.co.kr, not dev.toi; and
+#  redirecting dev.toi is unnecessary for this setup).
+
+address=/mef.onem2m.uplus.co.kr/<RELAY_HOST_IP>
+address=/brk2.onem2m.uplus.co.kr/<RELAY_HOST_IP>

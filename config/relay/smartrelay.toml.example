@@ -1,0 +1,37 @@
+# MTTL-W01 local relay config — DECLOUD (no upstream, no cloud egress).
+#
+# EXAMPLE. Copy to smartrelay.toml next to relay.py before running the relay.
+#
+# `dns` is intentionally UNSET  ->  the relay serves HTTP(:443)/MQTT(:18831)
+# locally from rules/*.py (rules/99-default.py = the smartrelay implementation).
+# There is NO forwarding to LG/Ommeq. Cloud egress stays OFF.
+#
+# Run with cwd = the relay directory:
+#     sudo python3 relay.py serve --config smartrelay.toml
+# (relay.py + mqtt_session.py + mqtt_wire.py + rules_engine.py must sit next to it;
+#  the deploy script places them there.)
+
+[relay]
+listen_host = "0.0.0.0"
+http_port = 80              # plaintext — serves the local Root CA (the device does GET /mef/cert/http/pem on :80)
+cert_dir = "certs"          # relative to cwd -> <deploy>/relay/certs  (keys chmod 600, host-only)
+rules_dir = "rules"         # relative to cwd -> <deploy>/relay/rules
+observer = "127.0.0.1:9883" # plaintext MQTT for the dashboard tap/inject (localhost only)
+default_domain = "mef.onem2m.uplus.co.kr"   # used when a TLS ClientHello carries no SNI
+
+# dns = "..."   # DO NOT SET. Setting this turns on upstream proxy mode = cloud egress.
+
+# capture_dir = "captures"  # optional raw byte capture; leave off by default
+
+[[relay.port]]
+local = 443
+remote = 443
+domain = "mef.onem2m.uplus.co.kr"    # SNI fallback for :443
+
+[[relay.port]]
+local = 18831
+remote = 18831
+domain = "brk2.onem2m.uplus.co.kr"   # SNI fallback for :18831 (firmware-confirmed MQTT port)
+
+# 18833 is legacy/unconfirmed — add a third [[relay.port]] with local=18833 only if a
+# live capture shows the device sending SYN to :18833.

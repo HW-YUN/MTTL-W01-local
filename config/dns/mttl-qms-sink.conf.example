@@ -1,0 +1,33 @@
+# EXAMPLE — QMS sink DNS drop-in for MTTL-W01.  ADDITIVE, exact hosts only.
+#
+# This is a template. Replace <RELAY_HOST_IP> with the relay host IP, then install
+# it as a NEW, SEPARATE file  /etc/dnsmasq.d/mttl-qms-sink.conf  via:
+#     deploy/proxmox-lxc/dns/apply_qms_sink_dns.sh
+# and remove it with:
+#     deploy/proxmox-lxc/dns/rollback_qms_sink_dns.sh
+# It NEVER edits the existing /etc/dnsmasq.d/mttl-relay.conf (mef/brk2 redirect).
+#
+# Effect: the two QMS diagnostic-log upload hosts resolve to the local relay so
+# that if the firmware makes a QMS HTTPS attempt it lands on rule
+# relay/rules/16-qms-sink.py and is recorded — instead of being silently
+# blackholed by the network egress block.
+#
+#   log.toi.ommeq.com      — V1.0.105 QMS endpoint (POST /read_iot_wifi :443)
+#   hdslog.lguplus.co.kr   — seen in a separate 1.0.66 runtime note; same purpose,
+#                            NOT assumed to be the same service
+#
+# NOT redirected — left exactly as they are:
+#   dev.toi.ommeq.com   (its containment / real-IP resolution is unchanged)
+#   toi.ommeq.com , *.ommeq.com , mef.onem2m.uplus.co.kr , brk2.onem2m.uplus.co.kr ,
+#   lguplus.co.kr , *.lguplus.co.kr , and every other name.
+#
+# No wildcard. dnsmasq's `address=/h/ip` also covers sub-labels of h (e.g.
+# *.log.toi.ommeq.com) — there are none in play, and it does NOT match the parent
+# (toi.ommeq.com) or a sibling (dev.toi.ommeq.com). Same idiom as mttl-relay.conf.
+#
+# This does NOT re-open any cloud / OTA / version-check / Voltra path: the relay
+# is decloud (smartrelay.toml has no `dns=`, so handle_tls has no upstream) and
+# 16-qms-sink.py never forwards. Keep the network egress block in place.
+
+address=/log.toi.ommeq.com/<RELAY_HOST_IP>
+address=/hdslog.lguplus.co.kr/<RELAY_HOST_IP>

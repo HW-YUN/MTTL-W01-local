@@ -1,0 +1,38 @@
+# smartrelay 설정 파일 예시.
+# 실행 시점의 working dir에 "smartrelay.toml"로 복사해두면 relay.py가 자동으로 읽는다
+# (앱/도커 배포시 이 파일 하나만 볼륨 마운트/교체하면 됨).
+# 값 우선순위: CLI 인자 > 이 파일 > 코드 기본값. 즉 여기 없는 항목은 CLI로 계속 줄 수 있고,
+# CLI로 준 값은 항상 이 파일보다 우선한다.
+
+[relay]
+listen_host = "0.0.0.0"
+http_port = 80
+cert_dir = "certs"
+rules_dir = "rules"
+
+# 콘솔 로그 레벨: trace/debug/info/warning/error/critical (기본 info).
+# log_level = "info"
+
+# --dns 서버(예: 8.8.8.8). 안 주면(또는 주석 처리하면) Decloud로 동작(rules가 직접 응답).
+# dns = "8.8.8.8"
+
+# ClientHello에 SNI가 없는 기기용 전역 기본 도메인. 포트별로 다르게 주려면
+# 아래 [[relay.port]]의 domain을 쓸 것(이게 있으면 그게 우선).
+# default_domain = "example.com"
+
+# 평문 MQTT 로컬주입 리스너(로컬신뢰망 전용, 방화벽 필수).
+# observer = "127.0.0.1:9883"
+
+# 지정하면 연결별 바이트 캡처 파일을 남긴다(기본은 꺼짐).
+# capture_dir = "captures"
+
+# TLS로 종단할 로컬 포트 목록. remote/domain은 생략 가능(remote 생략시 local과 동일).
+[[relay.port]]
+local = 443
+remote = 443
+domain = "example.com"
+
+[[relay.port]]
+local = 18831
+remote = 18831
+domain = "example.com"

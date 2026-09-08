@@ -1,0 +1,29 @@
+# MTTL-W01 local dashboard.
+# Install: /etc/systemd/system/mttl-dashboard.service
+# NOT enabled by default. Start manually:  systemctl start mttl-dashboard
+#
+# Control (outlet toggle) is DISABLED here. To allow it after you have verified
+# the protocol on your device, add  --enable-control  to ExecStart and reload.
+[Unit]
+Description=MTTL-W01 local dashboard
+After=network-online.target mttl-relay.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/srv/mttl-lab/dashboard
+ExecStart=/usr/bin/python3 /srv/mttl-lab/dashboard/mttl_dashboard.py \
+  --host 0.0.0.0 --port 8080 \
+  --state-file /srv/mttl-lab/relay/state/devices.json \
+  --observer 127.0.0.1:9883 \
+  --refresh 3
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=full
+ReadOnlyPaths=/srv/mttl-lab
+PrivateTmp=true
+DynamicUser=false
+
+[Install]
+WantedBy=multi-user.target

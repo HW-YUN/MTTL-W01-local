@@ -1,0 +1,43 @@
+# MTTL-W01 -> Home Assistant local MQTT bridge (v1).
+# Install: /etc/systemd/system/mttl-ha-bridge.service
+# NOT enabled by default. Start manually:  systemctl start mttl-ha-bridge
+#
+# Independent of the relay: a broker outage or a bridge crash must NOT touch
+# mttl-relay / device local MQTT / oneM2M / local control.  Hence Wants= (weak),
+# never Requires=/BindsTo=.  No privileged ports (outbound to :9883 and the HA
+# broker only) -> runs unprivileged.
+[Unit]
+Description=MTTL-W01 Home Assistant MQTT bridge (v1)
+After=network-online.target mttl-relay.service
+Wants=network-online.target mttl-relay.service
+StartLimitIntervalSec=60
+StartLimitBurst=6
+
+[Service]
+Type=simple
+# a dedicated unprivileged user with read access to the relay state file:
+User=mttl
+Group=mttl
+WorkingDirectory=/srv/mttl-lab/bridge
+EnvironmentFile=/etc/mttl/ha-bridge.env
+ExecStart=/usr/bin/python3 /srv/mttl-lab/bridge/mttl_ha_bridge.py
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=full
+ReadOnlyPaths=/srv/mttl-lab
+PrivateTmp=true
+# FIX-1 sticky client_id->MAC store: systemd creates /var/lib/mttl-ha-bridge
+# owned by User=mttl:Group=mttl, makes it read-write for this unit despite
+# ProtectSystem=full / ReadOnlyPaths=/srv/mttl-lab, and sets $STATE_DIRECTORY.
+# Persists across restart/redeploy so an actual-MAC slug never regresses to a
+# hash slug. StateDirectoryMode pins it to 0700 (systemd's default is 0755) —
+# this identity map is service-private. (StateDirectory / StateDirectoryMode:
+# systemd >= 235; Debian 12 ships 252.)
+StateDirectory=mttl-ha-bridge
+StateDirectoryMode=0700
+# the bridge only needs the HA broker (private IP) and the local observer;
+# it must never gain general outbound internet by itself.
+
+[Install]
+WantedBy=multi-user.target
