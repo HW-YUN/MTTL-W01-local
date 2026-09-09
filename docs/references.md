@@ -19,12 +19,12 @@
 | smartrelay (3735943886) | MEF / MQTT / oneM2M 기반 프록시 / decloud | 본 프로젝트가 사용하는 기술 기반 |
 | mttl_w01 (af950833) | Docker 로컬 서버 + `1.0.106` 커스텀 펌웨어 공개 경유 | Docker 중심 구성 대안 |
 | 순정 FW TCP 10086 / Matter Bridge (탱즈, [ttaengz](https://github.com/ttaengz/mttl-w01-matterbridge)) | 순정 펌웨어를 유지한 채 TCP 10086 으로 직접 제어(polling 기반 상태 갱신). 이후 SmartThings 환경을 위해 별도 Matter Bridge 서버 방식으로 확장 | 본 프로젝트와 다른 접근 |
-| 투오(tuoway) Standalone | 커스텀 펌웨어(`1.0.110`) + TCP 10086 기반 Standalone / 쉬운 설치 구성. 탱즈님의 TCP 10086 접근을 이어받아 event push 등으로 polling 방식의 한계를 개선한 흐름이며, `1.0.106` 계보의 후속입니다(`1.0.106` 과는 다른 버전이지만 무관한 별개 계열은 아님) | 설치 편의형 후속 접근 |
+| 투오(tuoway) Standalone | 커스텀 펌웨어(`1.0.110`) + TCP 10086 기반 Standalone / 쉬운 설치 구성. `1.0.106` 과는 다른 버전이며, 본 프로젝트는 사용하지 않습니다 | 설치 편의형 별도 접근 |
 | **본 프로젝트** | smartrelay + Proxmox LXC + HA MQTT Bridge (`1.0.66` stock / `1.0.106` custom 으로 검증) | — |
 
-## 펌웨어
+## 펌웨어 버전 및 상호참조
 
-펌웨어 계보와 각 버전의 출처는 [firmware-ota.md](firmware-ota.md) 에서 다룹니다.
+펌웨어 버전과 각 출처는 [firmware-ota.md](firmware-ota.md) 에서 다룹니다.
 본 저장소는 펌웨어 바이너리를 재배포하지 않습니다.
 
 ## Home Assistant
