@@ -532,7 +532,9 @@ class HaBridge:
             topic_key = str(key)
             s = f"{float(val):.2f}"
             if force or rec["p"].get(topic_key) != s:
-                self._pub(f"{self.cfg.data_prefix}/{slug}/power/{topic_key}", s, qos=0, retain=False)
+                # Retain power state so late HA subscribers receive static
+                # values such as 0.00 W.
+                self._pub(f"{self.cfg.data_prefix}/{slug}/power/{topic_key}", s, qos=0, retain=True)
                 rec["p"][topic_key] = s
         # --- voltage / internal temperature / cumulative energy -----
         # gated on vtpe_seen: the same persistent marker that gates the discovery.

@@ -29,6 +29,7 @@ for p in (VENDOR, BRIDGE):
 import mqtt_wire as mw            # noqa: E402  (vendored, read-only)
 import ha_discovery              # noqa: E402
 import mttl_ha_bridge as B       # noqa: E402
+import mttl_mqtt_client as MQ    # noqa: E402  (used as an independent late-subscriber "HA" client)
 
 PASS: list = []
 FAIL: list = []
@@ -61,6 +62,7 @@ class MiniServer:
     def __init__(self, is_observer=False):
         self.is_observer = is_observer
         self.published: list = []       # dict(topic,payload,qos,retain,dup)
+        self.retained: dict = {}        # topic -> {"payload":bytes,"qos":int} — last retained publish
         self.injects: list = []         # observer: non-list JSON commands
         self.list_devices = ([], None)  # observer: (client_ids, latest)
         self.connect_bodies: list = []
@@ -118,8 +120,16 @@ class MiniServer:
             self._send(c, mw.build_connack(False, 0))
         elif pkt.kind == mw.SUBSCRIBE:
             info = mw.parse_subscribe(pkt)
-            self.subs += [t.decode("utf-8", "replace") for t, _ in info.topics]
-            self._send(c, mw.build_suback(info.packet_id, [min(q, 1) for _, q in info.topics]))
+            topics = [(t.decode("utf-8", "replace"), q) for t, q in info.topics]
+            self.subs += [t for t, _ in topics]
+            self._send(c, mw.build_suback(info.packet_id, [min(q, 1) for _, q in topics]))
+            # late-subscriber retained replay (real Mosquitto behavior): exact-topic
+            # match only, no wildcard support needed for these tests.
+            for t, _ in topics:
+                r = self.retained.get(t)
+                if r:
+                    self._send(c, mw.build_publish(t.encode(), r["payload"], qos=r["qos"],
+                                                    packet_id=(9 if r["qos"] > 0 else None), retain=True))
         elif pkt.kind == mw.PUBLISH:
             info = mw.parse_publish(pkt)
             if info.qos == 1 and info.packet_id is not None:
@@ -129,9 +139,12 @@ class MiniServer:
             self._send(c, mw.build_pingresp())
 
     def _on_publish(self, info):
+        topic = info.topic.decode("utf-8", "replace")
         self.published.append(dict(
-            topic=info.topic.decode("utf-8", "replace"), payload=bytes(info.payload),
+            topic=topic, payload=bytes(info.payload),
             qos=info.qos, retain=bool(info.retain), dup=bool(info.dup)))
+        if info.retain:
+            self.retained[topic] = {"payload": bytes(info.payload), "qos": info.qos}
         if self.is_observer:
             try:
                 cmd = json.loads(info.payload)
@@ -454,16 +467,25 @@ def test_integration(tmpdir):
                for x in broker.by_topic("mttl/bridge/status")))
 
         # ---- power sensors (devices.json.meter_watts is already parsed to floats) ----
+        # outlet 3 = 0.0 -> a legitimate OFF-outlet zero, mixed in with real ON values,
+        # must publish as "0.00" exactly like the non-zero channels (no falsy-zero drop).
         write_state(sp, {DEV_A: _entry(DEV_A, MAC_A,
-                                       watts={"0": 12.99, "1": 8.61, "2": 4.37})})
+                                       watts={"0": 12.99, "1": 8.61, "2": 4.37, "3": 0.0})})
         ok("13. power total + per-outlet published",
            wait_for(lambda: broker.by_topic(f"mttl/{SLUG_A}/power/total")
                     and broker.by_topic(f"mttl/{SLUG_A}/power/1"), 6))
         ok("   power total value mirrors devices.json meter_watts",
            broker.by_topic(f"mttl/{SLUG_A}/power/total")[-1]["payload"] == b"12.99",
            broker.by_topic(f"mttl/{SLUG_A}/power/total")[-1]["payload"])
-        ok("14. power publishes are NOT retained",
-           all(not x["retain"] for x in broker.by_topic(f"mttl/{SLUG_A}/power/total")))
+        ok("   mixed state: a legitimate 0.0 W outlet publishes '0.00' (not dropped)",
+           wait_for(lambda: broker.by_topic(f"mttl/{SLUG_A}/power/3")
+                    and broker.by_topic(f"mttl/{SLUG_A}/power/3")[-1]["payload"] == b"0.00", 6),
+           broker.by_topic(f"mttl/{SLUG_A}/power/3"))
+        ok("14. power publishes ARE retained (fix: late HA subscribers must see a static 0.00 W)",
+           bool(broker.by_topic(f"mttl/{SLUG_A}/power/total"))
+           and all(x["retain"] for x in broker.by_topic(f"mttl/{SLUG_A}/power/total"))
+           and all(x["retain"] for x in broker.by_topic(f"mttl/{SLUG_A}/power/3"))
+           and all(x["qos"] == 0 for x in broker.by_topic(f"mttl/{SLUG_A}/power/total")))
 
         # ---- command -> observer inject ---------------------------------
         n_state_on = len([x for x in broker.by_topic(f"mttl/{SLUG_A}/outlet/1/state")
@@ -607,6 +629,106 @@ def test_integration_multidevice(tmpdir):
            wait_for(lambda: any(i.get("outlet") == 2 and i.get("device_client_id") == DEV_B
                                 for i in obs.power_injects()), 5), obs.power_injects())
     finally:
+        bridge.stop()
+        obs.stop()
+        broker.stop()
+
+
+def test_power_all_zero_multidevice(tmpdir):
+    print("== integration: all-OFF power == 0.00 (retained), isolated per device ==")
+    obs = MiniServer(is_observer=True)
+    broker = MiniServer()
+    sp = os.path.join(tmpdir, "devices_allzero.json")
+    # DEV_A: all 4 outlets OFF, device-reported total also 0.0 -> outlets + total
+    # legitimately 0 W, not missing/absent.
+    write_state(sp, {
+        DEV_A: _entry(DEV_A, MAC_A,
+                      power={"1": False, "2": False, "3": False, "4": False},
+                      watts={"0": 0.0, "1": 0.0, "2": 0.0, "3": 0.0, "4": 0.0}),
+        DEV_B: _entry(DEV_B, MAC_B,
+                      power={"1": True, "2": False, "3": False, "4": False},
+                      watts={"0": 9.10, "1": 9.10}),
+    })
+    obs.list_devices = ([DEV_A, DEV_B], DEV_B)
+
+    bridge = make_bridge(obs, broker, sp)
+    bridge.start()
+    try:
+        def zero_published(n):
+            xs = broker.by_topic(f"mttl/{SLUG_A}/power/{n}")
+            return bool(xs) and xs[-1]["payload"] == b"0.00" and xs[-1]["retain"]
+
+        ok("all-OFF: power outlet 1-4 == '0.00' (retained), device A",
+           wait_for(lambda: all(zero_published(n) for n in (1, 2, 3, 4)), 6),
+           [broker.by_topic(f"mttl/{SLUG_A}/power/{n}") for n in (1, 2, 3, 4)])
+        ok("all-OFF: power total == '0.00' (retained), device A",
+           wait_for(lambda: zero_published("total"), 6))
+
+        # device B (real ON load) must be completely unaffected by A's all-zero state
+        ok("device B power/1 unaffected -> real measured value, not 0.00",
+           wait_for(lambda: broker.by_topic(f"mttl/{SLUG_B}/power/1")
+                    and broker.by_topic(f"mttl/{SLUG_B}/power/1")[-1]["payload"] == b"9.10", 6),
+           broker.by_topic(f"mttl/{SLUG_B}/power/1"))
+        ok("device A / B power topics are distinct (no cross-device contamination)",
+           SLUG_A != SLUG_B
+           and f"mttl/{SLUG_A}/power/1" != f"mttl/{SLUG_B}/power/1")
+    finally:
+        bridge.stop()
+        obs.stop()
+        broker.stop()
+
+
+def test_late_subscriber_retained_power(tmpdir):
+    print("== integration: late HA subscriber must still receive a static 0.00 W ==")
+    # Regression test for the field bug this patch fixes: a static power value
+    # (0.00 W on an OFF outlet) is published once per change (rec["p"]
+    # change-suppression cache). Before the retain=True fix, a subscriber that
+    # joins AFTER that one publish would receive nothing and the HA sensor would
+    # show "unknown" forever. This test models exactly that ordering with a
+    # second, independent MQTT client that subscribes only after the bridge has
+    # already published.
+    obs = MiniServer(is_observer=True)
+    broker = MiniServer()
+    sp = os.path.join(tmpdir, "devices_late.json")
+    write_state(sp, {DEV_A: _entry(DEV_A, MAC_A,
+                                   power={"1": False, "2": False, "3": False, "4": False},
+                                   watts={"0": 0.0, "1": 0.0, "2": 0.0, "3": 0.0, "4": 0.0})})
+    obs.list_devices = ([DEV_A], DEV_A)
+
+    bridge = make_bridge(obs, broker, sp)
+    bridge.start()
+    late = None
+    try:
+        # 1) let the bridge publish its (retained) zero power state first.
+        ok("bridge publishes power/2 == '0.00' before any late subscriber connects",
+           wait_for(lambda: broker.by_topic(f"mttl/{SLUG_A}/power/2")
+                    and broker.by_topic(f"mttl/{SLUG_A}/power/2")[-1]["payload"] == b"0.00", 6))
+
+        # 2) ONLY NOW does a second, independent client connect and subscribe -
+        #    exactly the "HA subscribes after discovery" race from the field bug.
+        received: list = []
+        late = MQ.MqttClient(
+            "127.0.0.1", broker.port, "late-ha-subscriber",
+            username="mttl-bridge", password="s3cr3t",
+            on_connect=lambda c: c.subscribe([(f"mttl/{SLUG_A}/power/2", 0),
+                                              (f"mttl/{SLUG_A}/power/total", 0)]),
+            on_message=lambda t, p, q, r, d: received.append((t, p, r)),
+            name="late-sub",
+        )
+        late.start()
+        ok("late subscriber connects to the same broker",
+           wait_for(lambda: late.connected, 6))
+        ok("late subscriber receives retained power/2 == '0.00' despite subscribing late",
+           wait_for(lambda: any(t == f"mttl/{SLUG_A}/power/2" and p == b"0.00" and r
+                                for t, p, r in received), 4),
+           received)
+        ok("late subscriber receives retained power/total == '0.00' despite subscribing late",
+           wait_for(lambda: any(t == f"mttl/{SLUG_A}/power/total" and p == b"0.00" and r
+                                for t, p, r in received), 4),
+           received)
+    finally:
+        if late is not None:
+            late.stop()
         bridge.stop()
         obs.stop()
         broker.stop()
@@ -1067,6 +1189,8 @@ def main():
     test_unit_state_reader(wd)
     test_integration(wd)
     test_integration_multidevice(wd)
+    test_power_all_zero_multidevice(wd)
+    test_late_subscriber_retained_power(wd)
     test_integration_status_on(wd)
     test_integration_bad_state(wd)
     test_fix12_sticky_slug_defer(wd)
